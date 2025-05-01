@@ -67,6 +67,11 @@ function ZipDirectory($src_dir, $zip, $dir_in_archive='') {
 
 function ZipFull($src_dir, $archive_path): bool
 {
+    if(file_exists($archive_path))
+    {
+        unlink($archive_path);
+    }
+
     $zip = new ZipArchive();
     if ($zip->open($archive_path, ZIPARCHIVE::CREATE) !== true) {
         return false;
