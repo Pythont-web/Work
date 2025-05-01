@@ -50,29 +50,6 @@ function get_table_value($table)
     }
     return $result;
 }
-function addZip($tables_zip, $dumpDir, $ZipName): bool
-{
-    if(file_exists('../'.$ZipName))
-    {
-        unlink('../'.$ZipName);
-    }
-
-    $zip = new ZipArchive();
-
-    if($zip->open('../'.$ZipName, ZipArchive::CREATE))
-    {
-        foreach ($tables_zip as $table)
-        {
-            $zip->addFile($dumpDir . $table, $table);
-        }
-
-        $zip->close();
-        return true;
-    }
-
-    return false;
-}
-
 function ZipDirectory($src_dir, $zip, $dir_in_archive='') {
     $dirHandle = opendir($src_dir);
     while (false !== ($file = readdir($dirHandle))) {
@@ -115,12 +92,10 @@ if(isset($_POST['action']) && $_POST['action'] == 'backup')
 
     $db = get_db_name();
     $tables = get_tables();
-    $tables_zip = [];
 
     for ($i = 0; $i < count($tables); $i++)
     {
         $file_name = $tables[$i] . '.sql';
-        $tables_zip[] = $file_name;
         $fd = fopen($dumpDir . $file_name, "w");
         fwrite($fd, "Дамп таблицы `" . $tables[$i] . "` из базы данных `". $db . "`\n\n");
         fwrite($fd, "Создание таблицы: \n\n");
@@ -144,7 +119,7 @@ if(isset($_POST['action']) && $_POST['action'] == 'backup')
         fclose($fd);
     }
 
-    if(addZip($tables_zip, $dumpDir, $ZipName))
+    if(ZipFull($dumpDir, '../' . $ZipName))
     {
         $success_db = true;
     }
