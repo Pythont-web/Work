@@ -81,6 +81,11 @@ function ZipFull($src_dir, $archive_path): bool
     return true;
 }
 
+function quotes($str): string
+{
+    return ("'". $str. "'");
+}
+
 $success_db = false;
 $success_web = false;
 
@@ -115,8 +120,8 @@ if(isset($_POST['action']) && $_POST['action'] == 'backup')
 
         for ($j = 0; $j < count($select); $j++)
         {
-            $value = implode(', ', $select[$j]);
-            $insert = 'INSERT INTO ' . $tables[$i] . ' (' . $column. ') VALUES (' . $value . ')';
+            $value = implode(', ', array_map('quotes', $select[$j]));
+            $insert = 'INSERT INTO ' . $tables[$i] . ' (' . $column. ') VALUES (' . $value . ');';
 
             fwrite($fd, $insert . "\n");
         }
