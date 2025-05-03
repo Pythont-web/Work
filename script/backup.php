@@ -85,6 +85,21 @@ function get_table_info($table): array
     return $result;
 
 }
+
+function get_table_foreign_keys($table)
+{
+    $query = Database::prepare("SELECT COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_SCHEMA = '" . get_db_name() .
+        "'AND TABLE_NAME = '" . $table . "'");
+    $query->execute();
+    $result = $query->fetchALL();
+    if (!count($result))
+    {
+        return [];
+    }
+    return $result;
+
+}
 function ZipDirectory($src_dir, $zip, $dir_in_archive='') {
     $dirHandle = opendir($src_dir);
     while (false !== ($file = readdir($dirHandle))) {
@@ -140,6 +155,17 @@ if(isset($_POST['action']) && $_POST['action'] == 'backup')
         mkdir($dumpDir);
     }
 
+    $file_name = 'README.sql';
+    $fd = fopen($dumpDir . $file_name, "w");
+
+    fwrite($fd, "-- Для корректного выполнения запросов необходимо выполнить следующие действия:\n
+-- 1) Создать базу данных `" . get_db_name() . "` с помощью запроса: \n" . "
+CREATE DATABASE IF NOT EXISTS `" . get_db_name() . "`;\n" . "
+-- 2) Перейти к работе с базой данных `" . get_db_name() . "` с помощью запроса: \n" . "
+USE `" . get_db_name() . "`;\n" . "
+-- 3) Выполнить запросы из всех файлов типа table.sql; \n
+-- 4) Выполнить запросы из всех файлов типа table_foreign_keys.sql;");
+
     $db = get_db_name();
     $tables = get_tables();
 
@@ -150,7 +176,7 @@ if(isset($_POST['action']) && $_POST['action'] == 'backup')
         fwrite($fd, "-- Дамп таблицы `" . $tables[$i] . "` из базы данных `". $db . "`\n\n");
         fwrite($fd, "-- Создание таблицы: \n\n");
 
-        $create = "CREATE TABLE `". $tables[$i] ."` (\n";
+        $create = "CREATE TABLE IF NOT EXISTS `". $tables[$i] ."` (\n";
         $table_info = get_table_column($tables[$i]);
 
         for($j = 0; $j < count($table_info); $j++)
@@ -208,6 +234,25 @@ if(isset($_POST['action']) && $_POST['action'] == 'backup')
         }
 
         fclose($fd);
+
+        $fkeys = get_table_foreign_keys($tables[$i]);
+
+        if(count($fkeys) > 0)
+        {
+            $file_name = $tables[$i] . '_foreign_keys.sql';
+            $fd = fopen($dumpDir . $file_name, "w");
+
+            fwrite($fd, "-- Внешние ключи таблицы `" . $tables[$i] . "` из базы данных `". $db . "`\n\n");
+            fwrite($fd, "-- Добавление внешних ключей: \n\n");
+
+            for($j = 0; $j < count($fkeys); $j++)
+            {
+                $alter = "ALTER TABLE `" .$tables[$i]. "` ADD FOREIGN KEY (`" . $fkeys[$j]['COLUMN_NAME'] .
+                    "`) REFERENCES `" . $fkeys[$j]['REFERENCED_TABLE_NAME'] . "` (`" . $fkeys[$j]['REFERENCED_COLUMN_NAME'] . "`);";
+
+                fwrite($fd, $alter . "\n");
+            }
+        }
     }
 
     if(ZipFull($dumpDir, '../' . $ZipName))
