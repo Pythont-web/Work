@@ -34,9 +34,20 @@ function get_table_create($table)
     $result = $query->fetchALL();
     if (!count($result))
     {
-        return [];
+        return "";
     }
     return $result[0]['Create Table'];
+}
+function get_table_column($table)
+{
+    $query = Database::prepare('DESC ' . $table);
+    $query->execute();
+    $result = $query->fetchALL();
+    if (!count($result))
+    {
+        return [];
+    }
+    return $result;
 }
 
 function get_table_value($table)
@@ -49,6 +60,30 @@ function get_table_value($table)
         return [];
     }
     return $result;
+}
+
+function get_table_info($table): array
+{
+    $query = Database::prepare("SELECT ENGINE, SUBSTRING_INDEX(TABLE_COLLATION, '_', 1) AS CHARSET, 
+       TABLE_COLLATION AS 'COLLATE' FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '". get_db_name().
+        "' AND TABLE_NAME = '". $table. "'");
+    $query->execute();
+    $temp = $query->fetchALL();
+
+    if (!count($temp))
+    {
+        return [];
+    }
+
+    $result = [];
+    $keys = array_keys($temp[0]);
+    for($i = 0; $i < count($temp[0]); $i++)
+    {
+        $result[$keys[$i]] = $temp[0][$keys[$i]];
+    }
+
+    return $result;
+
 }
 function ZipDirectory($src_dir, $zip, $dir_in_archive='') {
     $dirHandle = opendir($src_dir);
@@ -86,6 +121,11 @@ function quotes($str): string
     return ("'". $str. "'");
 }
 
+function backticks($str): string
+{
+    return ("`". $str. "`");
+}
+
 $success_db = false;
 $success_web = false;
 
@@ -107,21 +147,62 @@ if(isset($_POST['action']) && $_POST['action'] == 'backup')
     {
         $file_name = $tables[$i] . '.sql';
         $fd = fopen($dumpDir . $file_name, "w");
-        fwrite($fd, "Дамп таблицы `" . $tables[$i] . "` из базы данных `". $db . "`\n\n");
-        fwrite($fd, "Создание таблицы: \n\n");
+        fwrite($fd, "-- Дамп таблицы `" . $tables[$i] . "` из базы данных `". $db . "`\n\n");
+        fwrite($fd, "-- Создание таблицы: \n\n");
 
-        $create = get_table_create($tables[$i]);
+        $create = "CREATE TABLE `". $tables[$i] ."` (\n";
+        $table_info = get_table_column($tables[$i]);
 
-        fwrite($fd, $create. "\n\n");
-        fwrite($fd, "Заполнение таблицы данными: \n\n");
+        for($j = 0; $j < count($table_info); $j++)
+        {
+            $create .= '  `' . $table_info[$j]['Field'] . '` ' . $table_info[$j]['Type'];
+
+            if($table_info[$j]['Null'] == 'NO')
+            {
+                $create .= ' NOT NULL';
+                if(!is_null($table_info[$j]['Default']))
+                {
+                    $create .= " DEFAULT '" . $table_info[$j]['Default']. "'";
+                }
+            }
+            else if($table_info[$j]['Null'] == 'YES')
+            {
+                $create .= ' DEFAULT NULL';
+            }
+
+            if($table_info[$j]['Key'] == 'PRI')
+            {
+                $create .= ' PRIMARY KEY';
+            }
+
+            if($table_info[$j]['Extra'] == 'auto_increment')
+            {
+                $create .= ' AUTO_INCREMENT';
+            }
+
+            if($j < count($table_info) - 1)
+            {
+                $create .= ",\n";
+            }
+            else
+            {
+                $create .= "\n)";
+            }
+        }
+
+        $info = get_table_info($tables[$i]);
+        $create .= " ". "ENGINE = ". $info['ENGINE'] . " DEFAULT CHARSET = ". $info['CHARSET'] . " COLLATE = ". $info['COLLATE'] . ";\n\n";
+
+        fwrite($fd, $create);
+        fwrite($fd, "-- Заполнение таблицы данными: \n\n");
 
         $select = get_table_value($tables[$i]);
-        $column = implode(', ', array_keys($select[0]));
+        $column = implode(', ', array_map('backticks', array_keys($select[0])));
 
         for ($j = 0; $j < count($select); $j++)
         {
             $value = implode(', ', array_map('quotes', $select[$j]));
-            $insert = 'INSERT INTO ' . $tables[$i] . ' (' . $column. ') VALUES (' . $value . ');';
+            $insert = "INSERT INTO `" . $tables[$i] . "` (" . $column. ") VALUES (" . $value . ");";
 
             fwrite($fd, $insert . "\n");
         }
