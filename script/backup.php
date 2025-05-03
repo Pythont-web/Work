@@ -1,4 +1,5 @@
 <?php
+
 function get_db_name()
 {
     $query = Database::prepare('SELECT DATABASE()');
@@ -10,6 +11,7 @@ function get_db_name()
     }
     return $result[0]['DATABASE()'];
 }
+
 function get_tables(): array
 {
     $query = Database::prepare('SHOW TABLES');
@@ -27,17 +29,6 @@ function get_tables(): array
     return $result;
 }
 
-function get_table_create($table)
-{
-    $query = Database::prepare('SHOW CREATE TABLE ' . $table);
-    $query->execute();
-    $result = $query->fetchALL();
-    if (!count($result))
-    {
-        return "";
-    }
-    return $result[0]['Create Table'];
-}
 function get_table_column($table)
 {
     $query = Database::prepare('DESC ' . $table);
