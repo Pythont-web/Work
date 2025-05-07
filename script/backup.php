@@ -1,18 +1,18 @@
 <?php
 
-class Temp_Database
+class DatabaseBackup
 {
+    private static $db_name = 'rolldelivery';
     private static $instance = null;
     private $connection = null;
     protected function __construct()
     {
         $host = '';
-        $db_name = '';
         $user_name = '';
         $password = '';
         include "setting.php";
         $this->connection = new \PDO(
-            'mysql:host='.$host.';dbname=' . $db_name,
+            'mysql:host='.$host.';dbname=' . self::$db_name,
             $user_name,
             $password,
             [
@@ -31,7 +31,7 @@ class Temp_Database
         throw new \BadMethodCallException('Unable to deserialize database connection.');
     }
 
-    public static function getInstance(): Temp_Database
+    public static function getInstance(): DatabaseBackup
     {
         if (null == self::$instance)
         {
@@ -58,131 +58,53 @@ class Temp_Database
 
 class Db_func
 {
-    public static function get_db_name()
-    {
-        $query = Temp_Database::prepare('SELECT DATABASE()');
-        $query->execute();
-        $result = $query->fetchALL();
-        if (!count($result))
-        {
-            return "";
-        }
-        return $result[0]['DATABASE()'];
-    }
+    private static $db_name = 'rolldelivery';
 
-    public static function get_tables(): array
+    public function get_db_name(): string
     {
-        $query = Temp_Database::prepare('SHOW TABLES');
+        return self::$db_name;
+    }
+    public function get_tables()
+    {
+        $query = DatabaseBackup::prepare('SHOW TABLES');
         $query->execute();
-        $temp = $query->fetchALL();
-        if (!count($temp))
+        $tables = $query->fetchALL();
+        if (!count($tables))
         {
-            return [];
+            return null;
         }
         $result = [];
-        for ($i = 0; $i < count($temp); $i++)
+        foreach ($tables as $table)
         {
-            $result[] = $temp[$i]['Tables_in_' . self::get_db_name()];
+            $result[] = $table['Tables_in_' . self::get_db_name()];
         }
         return $result;
     }
 
-    public static function get_table_column($table)
+    public function get_table_create($table)
     {
-        $query = Temp_Database::prepare('DESC ' . $table);
+        $query = DatabaseBackup::prepare('SHOW CREATE TABLE ' . $table);
         $query->execute();
         $result = $query->fetchALL();
         if (!count($result))
         {
-            return [];
+            return null;
         }
-        return $result;
+        return $result[0]['Create Table'];
     }
 
-    public static function get_table_value($table)
+    public function get_table_value($table)
     {
-        $query = Temp_Database::prepare('SELECT * FROM ' . $table);
+        $query = DatabaseBackup::prepare('SELECT * FROM ' . $table);
         $query->execute();
         $result = $query->fetchALL();
         if (!count($result))
         {
-            return [];
+            return null;
         }
         return $result;
     }
 
-    public static function get_table_info($table): array
-    {
-        $query = Temp_Database::prepare("SELECT ENGINE, SUBSTRING_INDEX(TABLE_COLLATION, '_', 1) AS CHARSET, 
-       TABLE_COLLATION AS 'COLLATE' FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '". self::get_db_name().
-            "' AND TABLE_NAME = '". $table. "'");
-        $query->execute();
-        $temp = $query->fetchALL();
-
-        if (!count($temp))
-        {
-            return [];
-        }
-
-        $result = [];
-        $keys = array_keys($temp[0]);
-        for($i = 0; $i < count($temp[0]); $i++)
-        {
-            $result[$keys[$i]] = $temp[0][$keys[$i]];
-        }
-
-        return $result;
-
-    }
-
-    public static function get_table_foreign_keys($table)
-    {
-        $query = Temp_Database::prepare("SELECT COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
-        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_SCHEMA = '" . self::get_db_name() .
-            "'AND TABLE_NAME = '" . $table . "'");
-        $query->execute();
-        $result = $query->fetchALL();
-        if (!count($result))
-        {
-            return [];
-        }
-        return $result;
-
-    }
-}
-
-class Zip_func
-{
-    public static function ZipDirectory($src_dir, $zip, $dir_in_archive='') {
-        $dirHandle = opendir($src_dir);
-        while (false !== ($file = readdir($dirHandle))) {
-            if (($file != '.')&&($file != '..')) {
-                if (!is_dir($src_dir.$file)) {
-                    $zip->addFile($src_dir.$file, $dir_in_archive.$file);
-                } else {
-                    $zip->addEmptyDir($dir_in_archive.$file);
-                    $zip = self::ZipDirectory($src_dir.$file.DIRECTORY_SEPARATOR,$zip,$dir_in_archive.$file.DIRECTORY_SEPARATOR);
-                }
-            }
-        }
-        return $zip;
-    }
-
-    public static function ZipFull($src_dir, $archive_path): bool
-    {
-        if(file_exists($archive_path))
-        {
-            unlink($archive_path);
-        }
-
-        $zip = new ZipArchive();
-        if ($zip->open($archive_path, ZIPARCHIVE::CREATE) !== true) {
-            return false;
-        }
-        $zip = self::ZipDirectory($src_dir,$zip);
-        $zip->close();
-        return true;
-    }
 }
 
 function quotes($str): string
@@ -195,16 +117,18 @@ function backticks($str): string
     return ("`". $str. "`");
 }
 
-$success_db = false;
-$success_web = false;
+    $db = new Db_func();
 
-if(isset($_POST['action']) && $_POST['action'] == 'backup')
-{
-    $dumpDir = './dump/';
-    $ZipName = 'dump.zip';
-    $WebName = 'backup.zip';
+    $dumpDir = $_SERVER['DOCUMENT_ROOT'].'/dump/';
 
-    if (!file_exists($dumpDir))
+    if (file_exists($dumpDir))
+    {
+        foreach (glob($dumpDir. '/*') as $file)
+        {
+            unlink($file);
+        }
+    }
+    else
     {
         mkdir($dumpDir);
     }
@@ -213,118 +137,54 @@ if(isset($_POST['action']) && $_POST['action'] == 'backup')
     $fd = fopen($dumpDir . $file_name, "w");
 
     fwrite($fd, "-- Для корректного выполнения запросов необходимо выполнить следующие действия:\n
--- 1) Создать базу данных `" . Db_func::get_db_name() . "` с помощью запроса: \n" . "
-CREATE DATABASE IF NOT EXISTS `" . Db_func::get_db_name() . "`;\n" . "
--- 2) Перейти к работе с базой данных `" . Db_func::get_db_name() . "` с помощью запроса: \n" . "
-USE `" . Db_func::get_db_name() . "`;\n" . "
+-- 1) Создать базу данных `" . $db->get_db_name() . "` с помощью запроса: \n" . "
+CREATE DATABASE IF NOT EXISTS `" . $db->get_db_name() . "`;\n" . "
+-- 2) Перейти к работе с базой данных `" . $db->get_db_name() . "` с помощью запроса: \n" . "
+USE `" . $db->get_db_name() . "`;\n" . "
 -- 3) Выполнить запросы из всех файлов типа table.sql; \n
 -- 4) Выполнить запросы из всех файлов типа table_foreign_keys.sql;");
 
-    $db = Db_func::get_db_name();
-    $tables = Db_func::get_tables();
+    $db_name = $db->get_db_name();
+    $tables = $db->get_tables();
 
-    for ($i = 0; $i < count($tables); $i++)
+    if(!is_null($tables))
     {
-        $file_name = $tables[$i] . '.sql';
-        $fd = fopen($dumpDir . $file_name, "w");
-        fwrite($fd, "-- Дамп таблицы `" . $tables[$i] . "` из базы данных `". $db . "`\n\n");
-        fwrite($fd, "-- Создание таблицы: \n\n");
-
-        $create = "CREATE TABLE IF NOT EXISTS `". $tables[$i] ."` (\n";
-        $table_info = Db_func::get_table_column($tables[$i]);
-
-        for($j = 0; $j < count($table_info); $j++)
+        foreach ($tables as $table)
         {
-            $create .= '  `' . $table_info[$j]['Field'] . '` ' . $table_info[$j]['Type'];
+            $file_name = $table . '.sql';
+            $create = $db->get_table_create($table);
 
-            if($table_info[$j]['Null'] == 'NO')
+            if(!is_null($create))
             {
-                $create .= ' NOT NULL';
-                if(!is_null($table_info[$j]['Default']))
+                preg_match('/FOREIGN KEY/', $create, $match);
+
+                if(count($match) > 0)
                 {
-                    $create .= " DEFAULT '" . $table_info[$j]['Default']. "'";
+                    $file_name = $table . '_foreign_key.sql';
+                }
+
+                $fd = fopen($dumpDir . $file_name, "w");
+                fwrite($fd, "-- Дамп таблицы `" . $table . "` из базы данных `". $db_name . "`\n\n");
+                fwrite($fd, "-- Создание таблицы: \n\n");
+                fwrite($fd, $create . ";\n\n");
+            }
+
+            $select = $db->get_table_value($table);
+
+            if(!is_null($select))
+            {
+                fwrite($fd, "-- Заполнение таблицы данными: \n\n");
+                $column = implode(', ', array_map('backticks', array_keys($select[0])));
+
+                for ($j = 0; $j < count($select); $j++)
+                {
+                    $value = implode(', ', array_map('quotes', $select[$j]));
+                    $insert = "INSERT INTO `" . $table . "` (" . $column. ") VALUES (" . $value . ");";
+
+                    fwrite($fd, $insert . "\n");
                 }
             }
-            else if($table_info[$j]['Null'] == 'YES')
-            {
-                $create .= ' DEFAULT NULL';
-            }
 
-            if($table_info[$j]['Key'] == 'PRI')
-            {
-                $create .= ' PRIMARY KEY';
-            }
-
-            if($table_info[$j]['Extra'] == 'auto_increment')
-            {
-                $create .= ' AUTO_INCREMENT';
-            }
-
-            if($j < count($table_info) - 1)
-            {
-                $create .= ",\n";
-            }
-            else
-            {
-                $create .= "\n)";
-            }
-        }
-
-        $info = Db_func::get_table_info($tables[$i]);
-        $create .= " ". "ENGINE = ". $info['ENGINE'] . " DEFAULT CHARSET = ". $info['CHARSET'] . " COLLATE = ". $info['COLLATE'] . ";\n\n";
-
-        fwrite($fd, $create);
-        fwrite($fd, "-- Заполнение таблицы данными: \n\n");
-
-        $select = Db_func::get_table_value($tables[$i]);
-        $column = implode(', ', array_map('backticks', array_keys($select[0])));
-
-        for ($j = 0; $j < count($select); $j++)
-        {
-            $value = implode(', ', array_map('quotes', $select[$j]));
-            $insert = "INSERT INTO `" . $tables[$i] . "` (" . $column. ") VALUES (" . $value . ");";
-
-            fwrite($fd, $insert . "\n");
-        }
-
-        fclose($fd);
-
-        $fkeys = Db_func::get_table_foreign_keys($tables[$i]);
-
-        if(count($fkeys) > 0)
-        {
-            $file_name = $tables[$i] . '_foreign_keys.sql';
-            $fd = fopen($dumpDir . $file_name, "w");
-
-            fwrite($fd, "-- Внешние ключи таблицы `" . $tables[$i] . "` из базы данных `". $db . "`\n\n");
-            fwrite($fd, "-- Добавление внешних ключей: \n\n");
-
-            for($j = 0; $j < count($fkeys); $j++)
-            {
-                $alter = "ALTER TABLE `" .$tables[$i]. "` ADD FOREIGN KEY (`" . $fkeys[$j]['COLUMN_NAME'] .
-                    "`) REFERENCES `" . $fkeys[$j]['REFERENCED_TABLE_NAME'] . "` (`" . $fkeys[$j]['REFERENCED_COLUMN_NAME'] . "`);";
-
-                fwrite($fd, $alter . "\n");
-            }
+            fclose($fd);
         }
     }
-
-    if(Zip_func::ZipFull($dumpDir, '../' . $ZipName))
-    {
-        $success_db = true;
-    }
-
-    if (file_exists($dumpDir)) {
-        foreach (glob($dumpDir. '/*') as $file) {
-            unlink($file);
-        }
-    }
-
-    rmdir($dumpDir);
-
-    if(Zip_func::ZipFull('./', '../' . $WebName))
-    {
-        $success_web = true;
-    }
-
-}
