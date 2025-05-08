@@ -4,6 +4,7 @@ class DatabaseBackup
 {
     private string $db_name;
     protected \PDO $connection;
+
     public function __construct(string $db)
     {
         $this->connection = new \PDO(
@@ -198,8 +199,6 @@ USE " . backticks($db_name) . ";\n" . "
                         $insert = "INSERT INTO " . backticks($tables[$i]) . " (" . $column. ") VALUES (" . $value . ");";
 
                         fwrite($fd, $insert . "\n");
-
-                        sleep(1);
 
                         if(microtime(true) - $start >= 25 && $j < count($select) - 1)
                         {
